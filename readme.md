@@ -32,4 +32,52 @@ U = P + I + D
 6. Ki:用于消除稳态误差，根据积分控制部分的公式，当实际值小于目标值时，对这部分偏差进行正向积分，在积分的作用下，积分控制的输出变得越来越大，因此输出也变得越来越大。当实际值大于目标值时，对偏差部分进行负向积分，减小输出。**可以用于消除稳态误差问题**。![](images/11.png)
    想要实现的效果：快准稳。![](images/12.png)
 
-#### ESP32 PWM 输出
+### ESP32 PWM输出
+占空比越高，输出的有效电压越高，占空比越低，输出的有效电压越低。
+* PWM:脉冲宽度调制，简称脉宽调制
+* 频率(f):1秒PWM有多少个周期(单位Hz)
+* 周期(T):一个周期多少时间
+* 占空比(duty):一个脉冲周期内，高电平的时间与整个周期时间的比例
+* 脉宽时间：一个周期内高电平时间
+#### ESP32中的LEDC(PWM控制器)
+1. LEDC是指LED PWM控制器，实际上就是PWM信号产生器。主要用于控制LED的亮度和颜色，也可以产生PWM信号。
+2. LED_PWM有16路通道(0~15)，即**8路高速通道(0~7)**，由80Mhz时钟驱动。**8路低速通道(8~15)**，由8Mhz时钟驱动。
+产生PWM信号的流程：
+1. 建立ledc通道`ledcSetup()`
+2. 将GPIO口与ledc通道关联
+3. Write、WriteTone、WriteNote
+4. 解除GPIO口与ledc通道的关联
+相关函数：
+1.  `ledcSetup(uint8_t channel, double freq, uint8_t resolution_bits)`设置LEDC通道对应的频率和分辨率(占空比分辨率)
+  * `channel`通道号，取值0~15
+  * `freq`PWM频率
+  * `resolution_bits`分辨率，取值0~20。比如设置为8，就可以把一个周期分为$2^8=256$等分
+ledc频率与分辨率的关系：
+![]((images/13.png))     
+常用配置频率及精度：
+![](images/14.png)    
+![](images/15.png)
+2. `ledcAttachPin(uint8_t pin, uint8_t  chan)`将LEDC通道绑定到指定GPIO口上以实现输出，**一个通道可以同时绑定到多个GPIO口上**。
+3. `ledcDetachPin(uint8_t pin)`;解除GPIO的LEDC功能
+4. `ledcWrite(uint8_t  chan, uint32_t  duty)`设置指定ledc通道的占空比(0~$2^bit$)
+#### 示例程序
+```c
+void setup()
+{
+int ret = 0;
+Serial.begin(115200);
+int ch0 = 0;
+int gpio4 = 4;
+
+ret = ledcSetup(ch0,5000,12);  // ledc初始化
+if(ret == 0){
+  Serial.println("Error Setup");
+}
+else
+  Serial.println("Success Setup");
+
+ledcAttachPin(gpio4, ch0);  // 将GPIO口与ledc通道关联
+ledcWrite(ch0,pow(2,11)); // 占空比50%，因为分辨率为12位，pow(2,11)占50%
+}
+void loop(){}
+```
