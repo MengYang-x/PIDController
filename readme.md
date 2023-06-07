@@ -1,6 +1,6 @@
 ### 基本概念
 所有的PID都可以归为模拟PID和数字PID两大类。       
-![](images/1.png)    
+![images](images/1.png)    
 * 模拟PID通过搭建控制电路实现的
 * 数字PID:通过编程实现
 ![](images/2.png)      
