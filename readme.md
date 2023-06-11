@@ -85,6 +85,7 @@ void loop(){}
 1. MPU6050陀螺仪角度方向和平衡角度测试
 2. 马达的驱动方向和死区大小测试
 #### MPU6050使用测试
+* 注意：Z轴偏航角会随着时间的增加而增大，无法直接使用。但是其角速度可以正常使用，可以用于转向控制
 ```c
 #include <Arduino.h>
 #include <Wire.h>
@@ -102,14 +103,139 @@ void setup()
 void loop()
 {
   mpu6050.update();
-  Serial.print("angleZ : ");
-  Serial.println(mpu6050.getAngleZ()); // 偏航角
-  Serial.print("\t GyroZ : ");
-  Serial.println(mpu6050.getGyroZ()); // 偏航角速度
+
+  Serial.print("angleX : ");
+  Serial.print(mpu6050.getAngleX());
+  Serial.print("\tangleY : ");
+  Serial.print(mpu6050.getAngleY());
+  Serial.print("\tangleZ : ");
+  Serial.println(mpu6050.getAngleZ());   // 转向相关，偏航角随着时间的增加而增加，这个数据没法用
   delay(50);
 }
 ```
 #### 马达死区测试
+* 记录左右电机，起转时的PWM，包括正反转，分别记录
 ```c
+#include <Arduino.h>
+#include <Wire.h>
+#include <MPU6050_tockn.h>
 
+MPU6050 mpu6050(Wire);
+
+// void setup()
+// {
+//   Serial.begin(115200);
+//   Wire.begin();
+//   mpu6050.begin();
+//   // mpu6050.calcGyroOffsets(true);
+// }
+// void loop()
+// {
+//   mpu6050.update();
+//   Serial.print("angleZ : ");
+//   Serial.println(mpu6050.getAngleZ()); // 偏航角
+//   Serial.print("\t GyroZ : ");
+//   Serial.println(mpu6050.getGyroZ()); // 偏航角速度
+//   delay(50);
+// }
+
+// 电机死区测试
+const int AIN1 = 16;
+const int AIN2 = 17;
+const int BIN1 = 18;
+const int BIN2 = 19;
+int pwm = 0;
+
+void motor(int leftEn, int rightEn)
+{
+  leftEn = constrain(leftEn, -255, 255);
+  rightEn = constrain(rightEn, -255, 255);
+
+  // 左电机
+  if (leftEn >= 0) // 正转
+  {
+    analogWrite(AIN1, leftEn);
+    analogWrite(AIN2, 0);
+  }
+  if (leftEn < 0) // 反转
+  {
+    analogWrite(AIN1, 0);
+    analogWrite(AIN2, 0 - leftEn);
+  }
+
+  // 右电机
+  if (rightEn >= 0) // 正转
+  {
+    analogWrite(BIN1, rightEn);
+    analogWrite(BIN2, 0);
+  }
+  if (rightEn < 0) // 反转
+  {
+    analogWrite(BIN1, 0);
+    analogWrite(BIN2, 0 - rightEn);
+  }
+}
+
+void serialDebug()
+{
+  if (Serial.available() > 0)
+  {
+    delay(5);
+    char data = Serial.read();
+    switch (data)
+    {
+    case '1':
+      pwm++;
+      Serial.print("pwm: ");
+      Serial.println(pwm);
+      break;
+    case '0':
+      pwm--;
+      Serial.print("pwm: ");
+      Serial.println(pwm);
+      break;
+    }
+  }
+}
+
+void setup()
+{
+  Serial.begin(115200);
+}
+
+void loop()
+{
+  serialDebug();
+  motor(pwm, pwm);
+}
 ```
+### analogWrite()和LED PWM控制器
+![](images/16.png)     
+* 使用`analogWrite()`进行输出时，不需要使用`pinMode()`初始化引脚
+ESP32中关于`analogWrite()`的定义：
+```c
+void analogWrite(uint8_t pin, int value) {
+  // Use ledc hardware for internal pins
+  if (pin < SOC_GPIO_PIN_COUNT) {
+    if (pin_to_channel[pin] == 0) {
+      if (!cnt_channel) {
+          log_e("No more analogWrite channels available! You can have maximum %u", LEDC_CHANNELS);
+          return;
+      }
+      pin_to_channel[pin] = cnt_channel--;
+      ledcAttachPin(pin, cnt_channel);
+      ledcSetup(cnt_channel, 1000, 8);   // 默认频率1KHz,2的8次方为256
+    }
+    ledcWrite(pin_to_channel[pin] - 1, value);
+  }
+}
+```
+### PID调参
+* 调参步骤：先调Kp、再调Kd、最后调Ki。
+* 首先不断增大P，直到出现开始-增加-减少-增加-回平这种图像，就是出现往上走有一个尖，往下走也有一个尖，即出现了两次震荡后，差不多就可以了。这时候加D，压平阶跃曲线即可，最后看整条曲线是不是趋近于目标值，如果没有就加I，消除稳态误差。
+* 先采用MATLAB进行微调，再进行实际验证调整(因为实际使用中会有各种干扰纯在)
+### PID角度环算法
+* 角度环PID：err = 预期角度 - 实际角度，通过这个去调节PWM。
+* 建议KP的调节范围：1~10，KI的范围10~60，KD调节范围0~80。
+* 如果不加PID控制，当相同PWM作用时，由于两个电机的转速不一样，同时由于车子的装配精度不够，导致车子前进时一直往一边偏，即角度不断增大。
+转向控制，直行控制
