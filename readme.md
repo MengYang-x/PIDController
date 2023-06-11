@@ -81,3 +81,32 @@ ledcWrite(ch0,pow(2,11)); // 占空比50%，因为分辨率为12位，pow(2,11)�
 }
 void loop(){}
 ```
+### 编程思路
+1. MPU6050陀螺仪角度方向和平衡角度测试
+2. 马达的驱动方向和死区大小测试
+#### MPU6050使用测试
+```c
+#include <Arduino.h>
+#include <Wire.h>
+#include <MPU6050_tockn.h>
+
+MPU6050 mpu6050(Wire);
+
+void setup()
+{
+  Serial.begin(115200);
+  Wire.begin();
+  mpu6050.begin();
+  // mpu6050.calcGyroOffsets(true);
+}
+void loop()
+{
+  mpu6050.update();
+  Serial.print("angleZ : ");
+  Serial.println(mpu6050.getAngleZ()); // 偏航角
+  Serial.print("\t GyroZ : ");
+  Serial.println(mpu6050.getGyroZ()); // 偏航角速度
+  delay(50);
+}
+```
+#### 马达死区测试
